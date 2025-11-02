@@ -39,6 +39,12 @@ jobs:
         with:
           targets: ${{ (matrix.platform == 'macos-latest') && 'aarch64-apple-darwin' || '' }}
 
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt install libdbus-1-dev
+
+
       - name: Setup Windows dependencies
         if: runner.os == 'Windows'
         run: choco install strawberryperl make --no-progress
