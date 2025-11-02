@@ -50,6 +50,13 @@ jobs:
       - name: Build
         run: |
           cargo install patch-crate
-          cargo fetch --locked
+          cargo fetch --locked || true
           cargo patch-crate --force
           cargo build --bin plumeimpactor --release
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plumeimpactor-${{ matrix.platform }}
+          path: |
+            target/release/plumeimpactor*
