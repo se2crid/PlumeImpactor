@@ -1,6 +1,9 @@
 use wxdragon::prelude::*;
 
+#[cfg(not(target_os = "linux"))]
 const WELCOME_TEXT: &str = "Drop your .ipa here";
+#[cfg(target_os = "linux")]
+const WELCOME_TEXT: &str = "Press '+' and select an .ipa to get started";
 
 #[derive(Clone)]
 pub struct DefaultPage {
@@ -8,10 +11,12 @@ pub struct DefaultPage {
 }
 
 impl DefaultPage {
+    #[cfg(not(target_os = "linux"))]
     fn is_allowed_file(path: &str) -> bool {
         path.ends_with(".ipa") || path.ends_with(".tipa")
     }
 
+    #[cfg(not(target_os = "linux"))]
     pub fn set_file_handlers(&self, on_drop: impl Fn(String) + 'static) {
         _ = FileDropTarget::builder(&self.panel)
             .with_on_drop_files(move |files, _, _| {

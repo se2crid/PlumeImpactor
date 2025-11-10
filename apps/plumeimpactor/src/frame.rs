@@ -387,6 +387,7 @@ impl PlumeFrame {
     }
 
     fn bind_file_handlers(&self, sender: mpsc::UnboundedSender<PlumeFrameMessage>) {
+        #[cfg(not(target_os = "linux"))]
         self.default_page.set_file_handlers(
             {
                 let sender = sender.clone();
