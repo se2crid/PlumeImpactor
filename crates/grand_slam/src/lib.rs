@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod developer;
+pub mod certificate;
 
 use plist::Dictionary;
 use serde_json::Value;

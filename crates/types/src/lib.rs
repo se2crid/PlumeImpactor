@@ -3,6 +3,7 @@ mod device;
 mod package;
 
 pub use bundle::Bundle;
+pub use bundle::BundleType;
 pub use device::Device;
 pub use package::Package;
 

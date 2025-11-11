@@ -43,13 +43,16 @@ pub fn create_default_page(frame: &Frame) -> DefaultPage {
         .with_style(StaticTextStyle::AlignCenterHorizontal)
         .build();
 
-    sizer.add(&welcome_text, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::All, 0);
+    sizer.add(
+        &welcome_text,
+        0,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::All,
+        0,
+    );
 
     sizer.add_stretch_spacer(1);
 
     panel.set_sizer(sizer, true);
 
-    DefaultPage { 
-        panel 
-    }
+    DefaultPage { panel }
 }

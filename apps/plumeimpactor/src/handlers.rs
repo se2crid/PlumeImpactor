@@ -74,7 +74,6 @@ impl PlumeFrameMessageHandler {
     fn handle_message(&mut self, message: PlumeFrameMessage) {
         match message {
             PlumeFrameMessage::DeviceConnected(device) => {
-                println!("Device connected: {}", device);
                 if !self
                     .usbmuxd_device_list
                     .iter()
@@ -91,7 +90,6 @@ impl PlumeFrameMessageHandler {
                 }
             }
             PlumeFrameMessage::DeviceDisconnected(device_id) => {
-                println!("Device disconnected: {}", device_id);
                 if let Some(index) = self
                     .usbmuxd_device_list
                     .iter()
@@ -111,7 +109,6 @@ impl PlumeFrameMessageHandler {
                 let package_id = package
                     .get_bundle_identifier()
                     .unwrap_or_else(|| "Unknown".to_string());
-                println!("Package selected: {}", package_name);
                 self.package_selected = Some(package);
                 self.plume_frame
                     .install_page
@@ -121,33 +118,13 @@ impl PlumeFrameMessageHandler {
                 self.plume_frame.frame.layout();
             }
             PlumeFrameMessage::PackageDeselected => {
-                println!("Package deselected");
                 self.package_selected = None;
                 self.plume_frame.install_page.panel.hide();
                 self.plume_frame.default_page.panel.show(true);
                 self.plume_frame.frame.layout();
             }
 			PlumeFrameMessage::PackageInstallationStarted => {
-                let package = match &self.package_selected {
-                    Some(pkg) => pkg.clone(),
-                    None => {
-                        self.handle_message(PlumeFrameMessage::Error(
-							"No package selected for installation.".to_string(),
-						));
-                        return;
-                    }
-                };
-
-                let account = match &self.account_credentials {
-                    Some(acc) => acc.clone(),
-                    None => {
-                        self.handle_message(PlumeFrameMessage::Error(
-							"Installation failed: No account logged in.".to_string(),
-						));
-                        return;
-                    }
-                };
-				//
+                todo!()
             }
             PlumeFrameMessage::AccountLogin(account) => {
                 self.account_credentials = Some(account);
@@ -161,7 +138,6 @@ impl PlumeFrameMessageHandler {
             }
             PlumeFrameMessage::AccountDeleted => {
                 self.account_credentials = None;
-                println!("Account deleted");
             }
             PlumeFrameMessage::AwaitingTwoFactorCode(tx) => {
                 let result = self.plume_frame.create_single_field_dialog(
@@ -171,10 +147,10 @@ impl PlumeFrameMessageHandler {
 
                 if let Err(e) = tx.send(result) {
                     println!("Failed to send 2FA code back to background thread: {:?}", e);
+                    
                 }
             }
             PlumeFrameMessage::Error(error_msg) => {
-                println!("Error: {}", error_msg);
                 let dialog = MessageDialog::builder(&self.plume_frame.frame, &error_msg, "Error")
                     .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconWarning)
                     .build();

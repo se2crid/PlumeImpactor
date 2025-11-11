@@ -193,6 +193,7 @@ impl PlumeFrame {
                             PlumeFrameMessage::Error(format!("Failed to listen for events: {}", e))
                         }
                     };
+
                     if sender.send(msg).is_err() {
                         break;
                     }
@@ -201,7 +202,6 @@ impl PlumeFrame {
         });
     }
 
-    /// Spawns the automatic account login thread.
     fn spawn_auto_login_thread(sender: mpsc::UnboundedSender<PlumeFrameMessage>) {
         thread::spawn(move || {
             let creds = AccountCredentials;
@@ -233,25 +233,19 @@ impl PlumeFrame {
         message_handler: Rc<RefCell<PlumeFrameMessageHandler>>,
     ) {
         // --- Device Picker ---
-		
+
         let handler_for_choice = message_handler.clone();
         let picker_clone = self.usbmuxd_picker.clone();
-        self.usbmuxd_picker
-            .on_selection_changed(move |_event_data| {
-                let mut handler = handler_for_choice.borrow_mut();
-
-                if let Some(index) = picker_clone.get_selection() {
-                    if let Some(selected_item) = handler.usbmuxd_device_list.get(index as usize) {
-                        handler.usbmuxd_selected_device_id =
-                            Some(selected_item.usbmuxd_device.device_id.to_string());
-                    }
-                } else {
-                    handler.usbmuxd_selected_device_id = None;
-                }
-            });
+        self.usbmuxd_picker.on_selection_changed(move |_| {
+            let mut handler = handler_for_choice.borrow_mut();
+            handler.usbmuxd_selected_device_id = picker_clone
+                .get_selection()
+                .and_then(|i| handler.usbmuxd_device_list.get(i as usize))
+                .map(|item| item.usbmuxd_device.device_id.to_string());
+        });
 
         // --- Apple ID / Login Dialog ---
-        
+
         let login_dialog_rc = Rc::new(self.login_dialog.clone());
         self.apple_id_button.on_click({
             let login_dialog = login_dialog_rc.clone();
@@ -263,7 +257,9 @@ impl PlumeFrame {
 
                 if logged_in {
                     let creds = AccountCredentials;
-                    let email = creds.get_email().unwrap_or_else(|_| "(unknown)".to_string());
+                    let email = creds
+                        .get_email()
+                        .unwrap_or_else(|_| "(unknown)".to_string());
 
                     let dialog = Dialog::builder(&frame_for_dialog, "Account")
                         .with_style(DialogStyle::DefaultDialogStyle)
@@ -272,7 +268,16 @@ impl PlumeFrame {
                     let sizer = BoxSizer::builder(Orientation::Vertical).build();
                     sizer.add_spacer(12);
                     let label = StaticText::builder(&dialog)
-                        .with_label(&format!("Logged in as {:?} ({})", handler_for_account.borrow().account_credentials.clone().unwrap().get_name(), email))
+                        .with_label(&format!(
+                            "Logged in as {:?} ({})",
+                            handler_for_account
+                                .borrow()
+                                .account_credentials
+                                .clone()
+                                .unwrap()
+                                .get_name(),
+                            email
+                        ))
                         .build();
                     sizer.add(&label, 0, SizerFlag::All, 12);
 
@@ -287,8 +292,8 @@ impl PlumeFrame {
                     let sender_clone = sender_for_logout.clone();
                     logout_btn.on_click(move |_| {
                         let creds = AccountCredentials;
-                        let _ = creds.delete_password();
-                        let _ = sender_clone.send(PlumeFrameMessage::AccountDeleted);
+                        creds.delete_password().ok();
+                        sender_clone.send(PlumeFrameMessage::AccountDeleted).ok();
                         dlg_logout.end_modal(ID_OK as i32);
                     });
 
@@ -300,36 +305,30 @@ impl PlumeFrame {
             }
         });
 
-        self.login_dialog.set_cancel_handler({
-            let login_dialog = login_dialog_rc.clone();
-            move || {
-                login_dialog.clear_fields();
-                login_dialog.hide();
-            }
-        });
-
         // --- Login Dialog "Next" Button ---
-		
+
         self.bind_login_dialog_next_handler(sender.clone(), login_dialog_rc);
 
         // --- File Drop/Open Handlers ---
-		
+
         self.bind_file_handlers(sender.clone());
 
         // --- Install Page Handlers ---
-		
-        let sender_for_cancel = sender.clone();
-        self.install_page.set_cancel_handler(move || {
-            sender_for_cancel
-                .send(PlumeFrameMessage::PackageDeselected)
-                .ok();
+
+        self.install_page.set_cancel_handler({
+            let sender = sender.clone();
+            move || {
+                sender.send(PlumeFrameMessage::PackageDeselected).ok();
+            }
         });
 
-        let sender_for_install = sender.clone();
-        self.install_page.set_install_handler(move || {
-            sender_for_install
-                .send(PlumeFrameMessage::PackageInstallationStarted)
-                .ok();
+        self.install_page.set_install_handler({
+            let sender = sender.clone();
+            move || {
+                sender
+                    .send(PlumeFrameMessage::PackageInstallationStarted)
+                    .ok();
+            }
         });
     }
 
@@ -355,32 +354,29 @@ impl PlumeFrame {
                 return;
             }
 
-            // Save credentials to keyring
             let creds = AccountCredentials;
             if let Err(e) = creds.set_credentials(email.clone(), password.clone()) {
-                let _ = sender
+                sender
                     .send(PlumeFrameMessage::Error(format!(
                         "Failed to save credentials: {}",
                         e
-                    )));
+                    )))
+                    .ok();
                 return;
             }
 
-            // Hide dialog before starting login
             login_dialog.clear_fields();
             login_dialog.hide();
 
             let sender_for_login_thread = sender.clone();
             thread::spawn(move || {
                 match run_login_flow(sender_for_login_thread.clone(), email, password) {
-                    Ok(account) => {
-                        let _ = sender_for_login_thread
-                            .send(PlumeFrameMessage::AccountLogin(account));
-                    }
-                    Err(e) => {
-                        let _ = sender_for_login_thread
-                            .send(PlumeFrameMessage::Error(format!("Login failed: {}", e)));
-                    }
+                    Ok(account) => sender_for_login_thread
+                        .send(PlumeFrameMessage::AccountLogin(account))
+                        .ok(),
+                    Err(e) => sender_for_login_thread
+                        .send(PlumeFrameMessage::Error(format!("Login failed: {}", e)))
+                        .ok(),
                 }
             });
         });
@@ -388,12 +384,10 @@ impl PlumeFrame {
 
     fn bind_file_handlers(&self, sender: mpsc::UnboundedSender<PlumeFrameMessage>) {
         #[cfg(not(target_os = "linux"))]
-        self.default_page.set_file_handlers(
-            {
-                let sender = sender.clone();
-                move |file_path| Self::process_package_file(sender.clone(), PathBuf::from(file_path))
-            },
-        );
+        self.default_page.set_file_handlers({
+            let sender = sender.clone();
+            move |file_path| Self::process_package_file(sender.clone(), PathBuf::from(file_path))
+        });
 
         self.add_ipa_button.on_click({
             let sender = sender.clone();
@@ -408,6 +402,7 @@ impl PlumeFrame {
                 if dialog.show_modal() != ID_OK {
                     return;
                 }
+
                 if let Some(file_path) = dialog.get_path() {
                     Self::process_package_file(sender.clone(), PathBuf::from(file_path));
                 }
@@ -415,11 +410,7 @@ impl PlumeFrame {
         });
     }
 
-    /// This de-duplicates logic from the file handlers.
-    fn process_package_file(
-        sender: mpsc::UnboundedSender<PlumeFrameMessage>,
-        file_path: PathBuf,
-    ) {
+    fn process_package_file(sender: mpsc::UnboundedSender<PlumeFrameMessage>, file_path: PathBuf) {
         match Package::new(file_path) {
             Ok(package) => {
                 sender
@@ -445,29 +436,35 @@ impl PlumeFrame {
         let sizer = BoxSizer::builder(Orientation::Vertical).build();
         sizer.add_spacer(16);
 
-        let field_label = StaticText::builder(&dialog).with_label(label).build();
+        sizer.add(
+            &StaticText::builder(&dialog).with_label(label).build(),
+            0,
+            SizerFlag::All,
+            12,
+        );
         let text_field = TextCtrl::builder(&dialog).build();
-        sizer.add(&field_label, 0, SizerFlag::All, 12);
         sizer.add(&text_field, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
-        // Buttons row
-        let buttons = BoxSizer::builder(Orientation::Horizontal).build();
-        let cancel_btn = Button::builder(&dialog).with_label("Cancel").build();
-        let ok_btn = Button::builder(&dialog).with_label("OK").build();
-        buttons.add(&cancel_btn, 0, SizerFlag::All, 8);
-        buttons.add_spacer(8);
-        buttons.add(&ok_btn, 0, SizerFlag::All, 8);
-        sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+        let button_sizer = BoxSizer::builder(Orientation::Horizontal).build();
+
+        let cancel_button = Button::builder(&dialog).with_label("Cancel").build();
+        let ok_button = Button::builder(&dialog).with_label("OK").build();
+
+        button_sizer.add(&cancel_button, 0, SizerFlag::All, 8);
+        button_sizer.add_spacer(8);
+        button_sizer.add(&ok_button, 0, SizerFlag::All, 8);
+
+        sizer.add_sizer(&button_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
 
         dialog.set_sizer(sizer, true);
 
-        let dlg_for_cancel = dialog.clone();
-        cancel_btn.on_click(move |_| {
-            dlg_for_cancel.end_modal(ID_CANCEL as i32);
+        cancel_button.on_click({
+            let dialog = dialog.clone();
+            move |_| dialog.end_modal(ID_CANCEL as i32)
         });
-        let dlg_for_ok = dialog.clone();
-        ok_btn.on_click(move |_| {
-            dlg_for_ok.end_modal(ID_OK as i32);
+        ok_button.on_click({
+            let dialog = dialog.clone();
+            move |_| dialog.end_modal(ID_OK as i32)
         });
 
         text_field.set_focus();
@@ -483,14 +480,13 @@ impl PlumeFrame {
     }
 }
 
-fn run_login_flow(
+pub fn run_login_flow(
     sender: mpsc::UnboundedSender<PlumeFrameMessage>,
     email: String,
     password: String,
 ) -> Result<Account, String> {
     let anisette_config =
-        AnisetteConfiguration::default().set_configuration_path(env::temp_dir());
-    // println!("Anisette config path: {:?}", env::temp_dir());
+        AnisetteConfiguration::default().set_configuration_path(PathBuf::from(env::temp_dir()));
 
     let rt = match Builder::new_current_thread().enable_all().build() {
         Ok(rt) => rt,

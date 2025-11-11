@@ -7,7 +7,7 @@ use crate::PlistInfoTrait;
 
 use errors::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BundleType {
     App,
     AppExtension,
@@ -29,7 +29,7 @@ impl BundleType {
 #[derive(Debug, Clone)]
 pub struct Bundle {
     dir: PathBuf,
-    _type: BundleType,
+    pub _type: BundleType,
     info_plist_file: PathBuf,
 }
 
@@ -74,6 +74,16 @@ impl Bundle {
         }
         plist.to_file_xml(&self.info_plist_file)?;
         
+        Ok(())
+    }
+    
+    pub fn set_name(&self, new_name: &str) -> Result<(), Error> {
+        self.set_info_plist_key("CFBundleDisplayName", new_name)
+    }
+    
+    pub fn set_version(&self, new_version: &str) -> Result<(), Error> {
+        self.set_info_plist_key("CFBundleShortVersionString", new_version)?;
+        self.set_info_plist_key("CFBundleVersion", new_version)?;
         Ok(())
     }
     
@@ -177,8 +187,24 @@ fn collect_embeded_bundles_from_dir(dir: &PathBuf) -> Result<Vec<Bundle>, Error>
         let path = entry.path();
 
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.ends_with(".storyboardc") {
+                continue;
+            }
+
             if is_bundle_dir(name) {
+                if name.ends_with(".storyboardc") {
+                    continue;
+                }
+
                 if let Ok(bundle) = Bundle::new(&path) {
+                    if bundle.info_plist_file.parent()
+                        .and_then(|p| p.file_name())
+                        .and_then(|n| n.to_str())
+                        .map_or(false, |n| n.ends_with(".storyboardc"))
+                    {
+                        continue;
+                    }
+
                     if let BundleType::App = bundle._type {
                         bundles.push(bundle);
                     } else {
@@ -195,6 +221,13 @@ fn collect_embeded_bundles_from_dir(dir: &PathBuf) -> Result<Vec<Bundle>, Error>
         }
 
         if path.is_dir() {
+            if path.file_name()
+                .and_then(|n| n.to_str())
+                .map_or(false, |n| n.ends_with(".storyboardc"))
+            {
+                continue;
+            }
+
             if let Ok(mut sub_bundles) = collect_embeded_bundles_from_dir(&path) {
                 bundles.append(&mut sub_bundles);
             }
