@@ -19,7 +19,7 @@ use crate::pages::login::LoginDialog;
 use crate::pages::{
     DefaultPage, InstallPage, create_default_page, create_install_page, create_login_dialog,
 };
-use types::{Device, Package};
+use crate::utils::{Device, Package};
 
 pub struct PlumeFrame {
     pub frame: Frame,

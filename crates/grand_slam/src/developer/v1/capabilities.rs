@@ -6,7 +6,7 @@ use crate::SessionRequestTrait;
 use crate::auth::account::request::RequestType;
 use crate::developer_endpoint;
 
-use errors::Error;
+use crate::Error;
 
 impl DeveloperSession {
     pub async fn v1_list_capabilities(&self, team: &str) -> Result<CapabilitiesResponse, Error> {

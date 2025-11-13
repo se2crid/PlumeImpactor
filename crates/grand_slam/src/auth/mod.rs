@@ -7,7 +7,7 @@ use reqwest::{Certificate, Client, ClientBuilder};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 
-use errors::Error;
+use crate::Error;
 
 use crate::auth::anisette_data::AnisetteData;
 

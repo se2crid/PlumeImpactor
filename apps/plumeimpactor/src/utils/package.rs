@@ -7,9 +7,9 @@ use plist::Dictionary;
 use uuid::Uuid;
 use zip::ZipArchive;
 
-use crate::bundle::Bundle;
-use crate::PlistInfoTrait;
-use errors::Error;
+use grand_slam::Bundle;
+use grand_slam::utils::PlistInfoTrait;
+use crate::Error;
 
 #[derive(Debug, Clone)]
 pub struct Package {
@@ -45,7 +45,7 @@ impl Package {
             .filter_map(Result::ok)
             .map(|e| e.path())
             .find(|p| p.is_dir() && p.extension().and_then(|e| e.to_str()) == Some("app"))
-            .ok_or_else(|| Error::BundleInfoPlistMissing)?;
+            .ok_or_else(|| Error::PackageInfoPlistMissing)?;
 
         Ok(Bundle::new(app_dir)?)
     }
@@ -58,7 +58,7 @@ impl Package {
                 .find(|name| name.starts_with("Payload/") 
                     && name.ends_with(".app/Info.plist")
                     && name.matches('/').count() == 2)
-                .ok_or(Error::BundleInfoPlistMissing)?
+                .ok_or(Error::PackageInfoPlistMissing)?
                 .to_string()
         };
         let mut entry = archive.by_name(&info_name)?;

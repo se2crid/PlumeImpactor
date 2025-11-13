@@ -9,10 +9,13 @@ repository.workspace = true
 
 [dependencies]
 idevice.workspace = true
+zip.workspace = true
 tokio.workspace = true
-ldid2 = { path = "../../crates/ldid2" }
+thiserror.workspace = true
+uuid.workspace = true
+plist.workspace = true
 grand_slam = { path = "../../crates/grand_slam", features = ["vendored-botan"] }
-types = { path = "../../crates/types"}
+
 wxdragon = "0.9.2"
 futures = "0.3.31"
 rustls = { version = "0.23.32", features = ["ring"] }

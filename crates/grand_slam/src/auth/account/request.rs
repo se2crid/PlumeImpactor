@@ -2,7 +2,7 @@ use plist::Dictionary;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
 
-use errors::Error;
+use crate::Error;
 
 use crate::{SessionRequestTrait, auth::Account};
 

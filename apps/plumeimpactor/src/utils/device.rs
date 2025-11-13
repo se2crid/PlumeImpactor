@@ -4,7 +4,7 @@ use idevice::usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdDevice};
 use idevice::lockdown::LockdownClient;
 use idevice::IdeviceService;
 
-use errors::Error;
+use crate::Error;
 
 pub const CONNECTION_LABEL: &str = "plume";
 

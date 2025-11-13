@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use srp::client::{SrpClient, SrpClientVerifier};
 use srp::groups::G_2048;
 
-use errors::Error;
+use crate::Error;
 
 use crate::auth::account::{check_error, parse_response};
 use crate::auth::anisette_data::AnisetteData;

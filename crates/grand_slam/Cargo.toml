@@ -16,7 +16,10 @@ uuid.workspace = true
 reqwest.workspace = true
 omnisette.workspace = true
 serde_json.workspace = true
-errors = { path = "../errors" }
+pem.workspace = true
+x509-certificate.workspace = true
+apple-codesign.workspace = true
+thiserror.workspace = true
 
 rustls = { version = "0.23.32", features = ["ring"] }
 serde = { version = "1", features = ["derive"] }

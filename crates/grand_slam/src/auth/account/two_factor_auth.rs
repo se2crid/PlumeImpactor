@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use base64::{Engine, engine::general_purpose};
-use errors::Error;
+use crate::Error;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::auth::{Account, AuthenticationExtras, LoginState, PhoneNumber, VerifyBody, VerifyCode};

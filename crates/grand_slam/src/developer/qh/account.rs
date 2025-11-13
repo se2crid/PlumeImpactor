@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use plist::{Dictionary, Value};
 
-use errors::Error;
+use crate::Error;
 
 use crate::{SessionRequestTrait, developer_endpoint};
 use super::{DeveloperSession, ResponseMeta};

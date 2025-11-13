@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use omnisette::{AnisetteConfiguration, AnisetteHeaders};
 
-use errors::Error;
+use crate::Error;
 
 #[derive(Debug, Clone)]
 pub struct AnisetteData {

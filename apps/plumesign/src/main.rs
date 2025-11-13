@@ -4,10 +4,10 @@ use std::process::exit;
 use clap::Parser;
 
 use clap::{Args, Subcommand};
-use ldid2::certificate::Certificate;
-use ldid2::provision;
-use ldid2::signing::signer::Signer;
-use ldid2::signing::signer_settings::{SignerSettings, SignerMode};
+use grand_slam::utils::Certificate;
+use grand_slam::utils::MobileProvision;
+use grand_slam::utils::Signer;
+use grand_slam::utils::SignerSettings;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, disable_help_subcommand = true)]
@@ -23,28 +23,22 @@ pub enum Commands {
 
 #[derive(Debug, Args)]
 pub struct SignArgs {
-    #[arg(long = "pem", value_name = "PEM", num_args = 1.., required = true)]
+    #[arg(long = "pem", value_name = "PEM", num_args = 1.., required = true, help = "PEM files for certificate and private key")]
     pub pem_files: Vec<PathBuf>,
 
-    #[arg(long = "provision", value_name = "PROVISION", num_args = 1.., required = true)]
+    #[arg(long = "provision", value_name = "PROVISION", num_args = 1.., required = true, help = "Provisioning profile files to embed")]
     pub provisioning_files: Vec<PathBuf>,
 
-    #[arg(value_name = "PACKAGE", long = "package", required = false)]
-    pub package: Option<PathBuf>,
+    #[arg(value_name = "BUNDLE", long = "bundle", required = true, help = "Path to the app bundle to sign")]
+    pub bundle: PathBuf,
 
-    #[arg(value_name = "BUNDLE", long = "bundle", required = false)]
-    pub bundle: Option<PathBuf>,
-
-    #[arg(short = 'w', long = "shallow", default_value_t = false)]
-    pub shallow: bool,
-
-    #[arg(long = "bundle-id", value_name = "BUNDLE_ID")]
+    #[arg(long = "custom-identifier", value_name = "BUNDLE_ID", help = "Custom bundle identifier to set")]
     pub bundle_identifier: Option<String>,
 
-    #[arg(long = "name", value_name = "NAME")]
+    #[arg(long = "custom-name", value_name = "NAME", help = "Custom bundle name to set")]
     pub name: Option<String>,
 
-    #[arg(long = "version", value_name = "VERSION")]
+    #[arg(long = "custom-version", value_name = "VERSION", help = "Custom bundle version to set")]
     pub version: Option<String>,
 }
 
@@ -63,19 +57,13 @@ async fn main() {
                 exit(1);
             }
             
-            let target = args.bundle.as_ref().or(args.package.as_ref()).cloned();
-            if target.is_none() {
-                eprintln!("Error: Either --bundle or --package must be specified.");
-                exit(1);
-            }
-
             let signing_key = Certificate::new(args.pem_files.clone().into()).unwrap_or_else(|e| {
                 eprintln!("Failed to create Certificate: {e}");
                 exit(1);
             });
 
             let provisioning_files = args.provisioning_files.iter()
-                .map(provision::MobileProvision::new)
+                .map(MobileProvision::load)
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap_or_else(|e| {
                     eprintln!("Failed to load provisioning profiles: {e}");
@@ -83,12 +71,6 @@ async fn main() {
                 });
 
             let signer_settings = SignerSettings {
-                sign_shallow: args.shallow,
-                sign_mode: if provisioning_files.len() == 1 { 
-                    SignerMode::Zsign
-                } else {
-                    SignerMode::Default
-                },
                 custom_name: args.name.clone(),
                 custom_identifier: args.bundle_identifier.clone(),
                 custom_build_version: args.version.clone(),
@@ -97,7 +79,7 @@ async fn main() {
 
             let signer = Signer::new(Some(signing_key), signer_settings, provisioning_files);
 
-            let target_path = target.unwrap();
+            let target_path = args.bundle.clone();
             if let Err(e) = signer.sign(target_path.clone()) {
                 eprintln!("Failed to sign target: {e}");
                 exit(1);

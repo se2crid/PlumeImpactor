@@ -9,7 +9,7 @@ use reqwest::Response;
 use sha2::Sha256;
 use srp::client::SrpClientVerifier;
 
-use errors::Error;
+use crate::Error;
 
 pub async fn parse_response(
     res: Result<Response, reqwest::Error>,

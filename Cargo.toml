@@ -2,11 +2,8 @@
 resolver = "3"
 members = [
     "apps/plumeimpactor",
-    "apps/plumesign", 
-    "crates/errors", 
-    "crates/ldid2", 
-    "crates/grand_slam",
-    "crates/types"
+    "apps/plumesign",
+    "crates/grand_slam"
 ]
 
 [workspace.package]

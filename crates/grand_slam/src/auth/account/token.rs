@@ -2,7 +2,7 @@ use botan::Cipher;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue};
 
-use errors::Error;
+use crate::Error;
 use sha2::Sha256;
 
 use crate::auth::{Account, AppToken, AuthTokenRequest, AuthTokenRequestBody, GSA_ENDPOINT, RequestHeader};

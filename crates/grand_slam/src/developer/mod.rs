@@ -4,7 +4,7 @@ pub mod v1;
 use plist::{Dictionary, Value};
 use uuid::Uuid;
 
-use errors::Error;
+use crate::Error;
 
 use crate::SessionRequestTrait;
 use crate::auth::{Account, account::request::RequestType};

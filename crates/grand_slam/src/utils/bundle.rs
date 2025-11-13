@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use plist::Value;
 
-use crate::PlistInfoTrait;
+use super::PlistInfoTrait;
 
-use errors::Error;
+use crate::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BundleType {
@@ -55,12 +55,21 @@ impl Bundle {
         })
     }
     
-    pub fn get_dir(&self) -> &PathBuf {
+    pub fn dir(&self) -> &PathBuf {
         &self.dir
     }
     
-    pub fn get_embedded_bundles(&self) -> Result<Vec<Bundle>, Error> {
+    pub fn collect_nested_bundles(&self) -> Result<Vec<Bundle>, Error> {
         collect_embeded_bundles_from_dir(&self.dir)
+    }
+
+    pub fn collect_bundles_sorted(&self) -> Result<Vec<Bundle>, Error> {
+        let mut bundles = self.collect_nested_bundles()?;
+        bundles.push(self.clone());
+        bundles.sort_by_key(|b| b.dir().components().count());
+        bundles.reverse();
+        
+        Ok(bundles)
     }
 
     pub fn set_info_plist_key<V: Into<Value>>(
@@ -77,14 +86,15 @@ impl Bundle {
         Ok(())
     }
     
+    // TODO: we need to support changing lproj infoplist strings so localized names change as well
     pub fn set_name(&self, new_name: &str) -> Result<(), Error> {
-        self.set_info_plist_key("CFBundleDisplayName", new_name)
+        self.set_info_plist_key("CFBundleDisplayName", new_name)?;
+        self.set_info_plist_key("CFBundleName", new_name)
     }
     
     pub fn set_version(&self, new_version: &str) -> Result<(), Error> {
         self.set_info_plist_key("CFBundleShortVersionString", new_version)?;
-        self.set_info_plist_key("CFBundleVersion", new_version)?;
-        Ok(())
+        self.set_info_plist_key("CFBundleVersion", new_version)
     }
     
     pub fn set_bundle_identifier(&self, new_identifier: &str) -> Result<(), Error> {
@@ -171,31 +181,30 @@ impl PlistInfoTrait for Bundle {
     }
 }
 
-fn is_bundle_dir(name: &str) -> bool {
-    if let Some((_, ext)) = name.rsplit_once('.') {
-        BundleType::from_extension(ext).is_some()
-    } else {
-        false
-    }
-}
-
 fn collect_embeded_bundles_from_dir(dir: &PathBuf) -> Result<Vec<Bundle>, Error> {
     let mut bundles = Vec::new();
+    
+    fn is_bundle_dir(name: &str) -> bool {
+        if let Some((_, ext)) = name.rsplit_once('.') {
+            BundleType::from_extension(ext).is_some()
+        } else {
+            false
+        }
+    }
 
     for entry in fs::read_dir(dir)? {
-        let entry = entry.map_err(|e| Error::Io(e))?;
+        let entry = entry.map_err(Error::Io)?;
         let path = entry.path();
 
+        if path.file_name()
+            .and_then(|n| n.to_str())
+            .map_or(false, |n| n.ends_with(".storyboardc"))
+        {
+            continue;
+        }
+
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.ends_with(".storyboardc") {
-                continue;
-            }
-
             if is_bundle_dir(name) {
-                if name.ends_with(".storyboardc") {
-                    continue;
-                }
-
                 if let Ok(bundle) = Bundle::new(&path) {
                     if bundle.info_plist_file.parent()
                         .and_then(|p| p.file_name())
@@ -205,14 +214,11 @@ fn collect_embeded_bundles_from_dir(dir: &PathBuf) -> Result<Vec<Bundle>, Error>
                         continue;
                     }
 
-                    if let BundleType::App = bundle._type {
-                        bundles.push(bundle);
-                    } else {
-                        if let Ok(embedded) = bundle.get_embedded_bundles() {
-                            bundles.push(bundle);
+                    bundles.push(bundle.clone());
+
+                    if bundle._type != BundleType::App {
+                        if let Ok(embedded) = bundle.collect_nested_bundles() {
                             bundles.extend(embedded);
-                        } else {
-                            bundles.push(bundle);
                         }
                     }
                     continue;
@@ -221,13 +227,6 @@ fn collect_embeded_bundles_from_dir(dir: &PathBuf) -> Result<Vec<Bundle>, Error>
         }
 
         if path.is_dir() {
-            if path.file_name()
-                .and_then(|n| n.to_str())
-                .map_or(false, |n| n.ends_with(".storyboardc"))
-            {
-                continue;
-            }
-
             if let Ok(mut sub_bundles) = collect_embeded_bundles_from_dir(&path) {
                 bundles.append(&mut sub_bundles);
             }

@@ -5,7 +5,8 @@ use tokio::sync::mpsc::error::TryRecvError;
 use std::sync::mpsc as std_mpsc;
 
 use grand_slam::auth::Account;
-use types::{Device, Package, PlistInfoTrait};
+use crate::utils::{Device, Package};
+use grand_slam::utils::PlistInfoTrait;
 
 use crate::frame::PlumeFrame;
 

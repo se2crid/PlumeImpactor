@@ -2,8 +2,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use apple_codesign::MachFile;
+use plist::{Dictionary, Value};
 
-use errors::Error;
+use crate::Error;
     
 pub struct MachO<'a> {
     macho_file: MachFile<'a>,
@@ -21,11 +22,14 @@ impl<'a> MachO<'a> {
         })
     }
     
-    pub fn get_entitlements(&self) -> Result<Option<String>, Error> {
+    pub fn entitlements(&self) -> Result<Option<Dictionary>, Error> {
         let macho = self.macho_file.nth_macho(0)?;
         if let Some(embedded_sig) = macho.code_signature()? {
             if let Ok(Some(slot)) = embedded_sig.entitlements() {
-                return Ok(Some(slot.to_string()));
+                let value = Value::from_reader_xml(slot.to_string().as_bytes())?;
+                if let Value::Dictionary(dict) = value {
+                    return Ok(Some(dict));
+                }
             }
         }
         Ok(None)
