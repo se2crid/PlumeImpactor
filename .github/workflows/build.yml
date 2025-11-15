@@ -64,23 +64,25 @@ jobs:
       - name: Build & Bundle (Linux)
         if: runner.os == 'Linux'
         run: |
-          cargo bundle --bin plumeimpactor --package plumeimpactor --format rpm
-          cargo bundle --bin plumeimpactor --package plumeimpactor --format deb
-          cargo bundle --bin plumeimpactor --package plumeimpactor --format appimage
+          cargo bundle --bin plumeimpactor --package plumeimpactor --release --format appimage
 
       - name: Build & Bundle (macOS)
         if: runner.os == 'macOS'
         run: |
-          cargo bundle --bin plumeimpactor --package plumeimpactor --format dmg
+          cargo bundle --bin plumeimpactor --package plumeimpactor --release --format osx
+          mkdir build
+          cp -R target/release/bundle/*/*.app build/
+          ln -s /Applications build/Applications
+          hdiutil create -volname plumeimpactor -srcfolder build -ov -format UDZO target/release/bundle/plumeimpactor.dmg
 
       - name: Build & Bundle (Windows)
         if: runner.os == 'Windows'
         run: |
-          cargo bundle --bin plumeimpactor --package plumeimpactor --format exe
+          cargo bundle --bin plumeimpactor --package plumeimpactor --release --format msi
 
       - name: Upload Bundles
         uses: actions/upload-artifact@v4
         with:
           name: plumeimpactor-${{ matrix.platform }}
           path: |
-            target/bundle/*/*.{rpm,deb,AppImage,dmg,exe}
+            target/release/bundle/*/*.{rpm,deb,AppImage,dmg,exe,msi}
