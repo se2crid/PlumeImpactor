@@ -35,6 +35,8 @@ pub enum Error {
     
     #[error("Missing certificate PEM data")]
     CertificatePemMissing,
+    #[error("Certificate error: {0}")]
+    Certificate(String),
     
     #[error("Developer session error {0}: {1}")]
     DeveloperSession(i64, String),

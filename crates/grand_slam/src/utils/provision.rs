@@ -75,7 +75,7 @@ impl MobileProvision {
     
     pub fn merge_entitlements(&mut self, binary_path: PathBuf) -> Result<(), Error> {
         let macho = MachO::new(&binary_path)?;
-        let binary_entitlements = macho.entitlements()?.ok_or(Error::ProvisioningEntitlementsUnknown)?;
+        let binary_entitlements = macho.entitlements.ok_or(Error::ProvisioningEntitlementsUnknown)?;
 
         if let Some(Value::Array(other_groups)) = binary_entitlements.get("keychain-access-groups") {
             self.entitlements.insert("keychain-access-groups".to_string(), Value::Array(other_groups.clone()));

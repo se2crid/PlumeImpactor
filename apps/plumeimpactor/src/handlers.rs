@@ -183,6 +183,7 @@ impl PlumeFrameMessageHandler {
                     .show_elapsed_time()
                     .show_estimated_time()
                     .show_remaining_time()
+                    .can_abort()
                     .smooth()
                     .build();
                 
