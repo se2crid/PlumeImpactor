@@ -7,7 +7,7 @@ use grand_slam::certificate::CertificateIdentity;
 use grand_slam::{AnisetteConfiguration, BundleType, Certificate, MachO, MobileProvision, Signer};
 use grand_slam::auth::Account;
 use grand_slam::developer::DeveloperSession;
-use grand_slam::utils::{PlistInfoTrait, SignerSettings};
+use grand_slam::utils::PlistInfoTrait;
 use idevice::utils::installation;
 use wxdragon::prelude::*;
 

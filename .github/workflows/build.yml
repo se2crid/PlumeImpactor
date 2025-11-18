@@ -153,7 +153,6 @@ jobs:
           cargo fetch --locked || true
           cargo patch-crate --force
           mkdir -p build/out
-          mkdir -p build/dmg
 
       - name: Build (macOS Intel)
         run: |
@@ -198,6 +197,7 @@ jobs:
 
       - name: Bundle
         run: |
+          mkdir -p build/dmg
           cp -R package/macos/${{ env.BUNDLE_NAME }}.app build/dmg/${{ env.BUNDLE_NAME }}.app
           mv build/universal/${{ env.BINARY_NAME }} build/dmg/${{ env.BUNDLE_NAME }}.app/Contents/MacOS/${{ env.BINARY_NAME }}
 
