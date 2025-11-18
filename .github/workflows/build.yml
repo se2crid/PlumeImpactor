@@ -206,7 +206,6 @@ jobs:
       - name: Codesign
         run: |
           codesign --deep --force --options runtime \
-            --entitlements package/macos/entitlements.plist \
             --sign "${{ secrets.DEV_ID_IDENTITY_NAME }}" build/dmg/${{ env.BUNDLE_NAME }}.app
 
       - name: Create DMG
