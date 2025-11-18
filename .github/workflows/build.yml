@@ -153,6 +153,7 @@ jobs:
           cargo fetch --locked || true
           cargo patch-crate --force
           mkdir -p build/out
+          mkdir -p build/dmg
 
       - name: Build (macOS Intel)
         run: |
