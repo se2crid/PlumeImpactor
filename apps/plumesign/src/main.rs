@@ -38,6 +38,9 @@ pub struct SignArgs {
 
     #[arg(long = "custom-version", value_name = "VERSION", help = "Custom bundle version to set")]
     pub version: Option<String>,
+
+    // TODO: add support for p12, but for that to happen we need to patch
+    // the P12 crate to support SHA256 hashes...
 }
 
 #[tokio::main]

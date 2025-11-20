@@ -7,11 +7,13 @@ pub use install::{InstallPage, create_install_page};
 pub mod login;
 pub use login::{create_login_dialog, create_account_dialog};
 
+// TODO: investigate why github actions messes up weird sizing shit
 #[cfg(target_os = "linux")]
 pub const WINDOW_SIZE: (i32, i32) = (700, 660);
 #[cfg(not(target_os = "linux"))]
 pub const WINDOW_SIZE: (i32, i32) = (530, 410);
 
+// TODO: investigate why github actions messes up weird sizing shit
 #[cfg(target_os = "linux")]
 pub const DIALOG_SIZE: (i32, i32) = (500, 500);
 #[cfg(not(target_os = "linux"))]
