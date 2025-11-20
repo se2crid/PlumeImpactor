@@ -18,8 +18,7 @@ use tokio::sync::mpsc;
 use crate::get_data_path;
 use crate::handlers::{PlumeFrameMessage, PlumeFrameMessageHandler};
 use crate::keychain::AccountCredentials;
-use crate::pages::login::{AccountDialog, LoginDialog};
-use crate::pages::{DefaultPage, InstallPage, create_account_dialog, create_default_page, create_install_page, create_login_dialog, WINDOW_SIZE};
+use crate::pages::{LoginDialog, DefaultPage, InstallPage, SettingsDialog, WINDOW_SIZE, create_default_page, create_install_page, create_login_dialog, create_settings_dialog};
 use crate::utils::{Device, Package};
 
 pub const APP_NAME: &str = concat!(env!("CARGO_PKG_NAME"), " – Version ", env!("CARGO_PKG_VERSION"));
@@ -32,8 +31,9 @@ pub struct PlumeFrame {
 
     pub add_ipa_button: Button,
     pub apple_id_button: Button,
+
     pub login_dialog: LoginDialog,
-    pub account_dialog: AccountDialog,
+    pub settings_dialog: SettingsDialog,
 }
 
 impl PlumeFrame {
@@ -84,7 +84,7 @@ impl PlumeFrame {
             add_ipa_button,
             apple_id_button,
             login_dialog: create_login_dialog(&frame),
-            account_dialog: create_account_dialog(&frame),
+            settings_dialog: create_settings_dialog(&frame),
         };
 
         s.setup_event_handlers();
@@ -196,386 +196,80 @@ impl PlumeFrame {
                 _ => { return; }
             };
 
-            match run_login_flow(sender.clone(), email, password) {
+            match run_login_flow(sender.clone(), &email, &password) {
                 Ok(account) => {
                     sender.send(PlumeFrameMessage::AccountLogin(account)).ok();
                 }
                 Err(e) => {
-                    sender.send(PlumeFrameMessage::Error(format!("Login error: {}", e))).ok();
                     sender.send(PlumeFrameMessage::AccountDeleted).ok();
+                    sender.send(PlumeFrameMessage::Error(format!("Login error: {}", e))).ok();
                 }
             }
         });
     }
+}
 
+// MARK: - Button Handlers
+
+impl PlumeFrame {
     fn bind_widget_handlers(
         &mut self,
         sender: mpsc::UnboundedSender<PlumeFrameMessage>,
         message_handler: Rc<RefCell<PlumeFrameMessageHandler>>,
     ) {
-        // --- Device Picker ---
+        // MARK: Device Picker
 
-        let handler_for_choice = message_handler.clone();
-        let picker_clone = self.usbmuxd_picker.clone();
-        self.usbmuxd_picker.on_selection_changed(move |_| {
-            let mut handler = handler_for_choice.borrow_mut();
-            handler.usbmuxd_selected_device_id = picker_clone
-                .get_selection()
-                .and_then(|i| handler.usbmuxd_device_list.get(i as usize))
-                .map(|item| item.usbmuxd_device.device_id.to_string());
-        });
-
-        // --- Apple ID / Login Dialog ---
-
-        let login_dialog_rc = Rc::new(self.login_dialog.clone());
-        let account_dialog_rc = Rc::new(self.account_dialog.clone());
-        let handler_for_account = message_handler.clone();
-        self.apple_id_button.on_click({
-            let login_dialog = login_dialog_rc.clone();
-            let account_dialog = account_dialog_rc.clone();
+        self.usbmuxd_picker.on_selection_changed( {
+            let message_handler = message_handler.clone();
+            let picker_clone = self.usbmuxd_picker.clone();
             move |_| {
-                if let Some(creds) = handler_for_account.borrow().account_credentials.as_ref() {
-                    let (first, last) = creds.get_name();
-                    account_dialog.set_account_name((first, last));
-                    account_dialog.show_modal();
+                let mut handler = message_handler.borrow_mut();
+                handler.usbmuxd_selected_device_id = picker_clone
+                    .get_selection()
+                    .and_then(|i| handler.usbmuxd_device_list.get(i as usize))
+                    .map(|item| item.usbmuxd_device.device_id.to_string());
+            }
+        });
+
+        // MARK: Apple ID / Login Dialog
+
+        self.apple_id_button.on_click({
+            let account_dialog = Rc::new(self.settings_dialog.clone());
+            move |_| {
+                account_dialog.dialog.show(true);
+            }
+        });
+        
+        self.settings_dialog.set_logout_handler({
+            let message_handler = message_handler.clone();
+            let sender = sender.clone();
+            let login_dialog = self.login_dialog.clone();
+            move || {
+                if message_handler.borrow().account_credentials.is_some() {
+                    sender.send(PlumeFrameMessage::AccountDeleted).ok(); 
                 } else {
-                    login_dialog.show_modal();
+                    login_dialog.dialog.show(true);
                 }
             }
         });
-        
-        self.account_dialog.set_logout_handler({
-            let sender = sender.clone();
-            move || {
-                sender.send(PlumeFrameMessage::AccountDeleted).ok();
-            }
-        });
 
-        // --- Login Dialog "Next" Button ---
+        // MARK: File Drop/Open Handlers
 
-        self.bind_login_dialog_next_handler(sender.clone(), login_dialog_rc);
-
-        // --- File Drop/Open Handlers ---
-
-        self.bind_file_handlers(sender.clone());
-
-        // --- Install Page Handlers ---
-
-        self.install_page.set_cancel_handler({
-            let sender = sender.clone();
-            move || {
-                sender.send(PlumeFrameMessage::PackageDeselected).ok();
-            }
-        });
-        
-        let message_handler_for_install = message_handler.clone();
-        self.install_page.set_install_handler({
-            // let frame = self.frame.clone();
-            let sender = sender.clone();
-            move || {
-            let binding = message_handler_for_install.borrow();
-
-            let Some(selected_device) = binding.usbmuxd_selected_device_id.as_deref() else {
-                sender.send(PlumeFrameMessage::Error("No device selected for installation.".to_string())).ok();
-                return;
-            };
-            
-            let Some(selected_package) = binding.package_selected.as_ref() else {
-                sender.send(PlumeFrameMessage::Error("No package selected for installation.".to_string())).ok();
-                return;
-            };
-
-            let Some(selected_account) = binding.account_credentials.as_ref() else {
-                sender.send(PlumeFrameMessage::Error("No Apple ID account available for installation.".to_string())).ok();
-                return;
-            };
-            
-            let mut signer_settings = binding.signer_settings.clone();
-            binding.plume_frame.install_page.update_fields(&mut signer_settings);
-
-            let package = selected_package.clone();
-            let account = selected_account.clone();
-            let device_id = selected_device.to_string();
-            let sender_clone = sender.clone();
-
-            thread::spawn(move || {
-                let rt = Builder::new_current_thread().enable_all().build().unwrap();
-
-                let install_result = rt.block_on(async {
-                    let session = DeveloperSession::with(account.clone());
-                    
-                    sender_clone.send(PlumeFrameMessage::InstallProgress(10, Some("Ensuring current device is registered...".to_string()))).ok();
-
-                    let mut usbmuxd = UsbmuxdConnection::default()
-                        .await
-                        .map_err(|e| format!("usbmuxd connect error: {e}"))?;
-                    let usbmuxd_device = usbmuxd.get_devices()
-                        .await
-                        .map_err(|e| format!("usbmuxd device list error: {e}"))?
-                        .into_iter()
-                        .find(|d| d.device_id.to_string() == device_id)
-                        .ok_or_else(|| format!("Device ID {device_id} not found"))?;
-
-                    let device = Device::new(usbmuxd_device.clone()).await;
-                    
-                    // TODO: Handle multiple teams properly
-                    let teams = session.qh_list_teams()
-                        .await
-                        .map_err(|e| format!("Failed to list teams: {}", e))?.teams;
-                    
-                    if teams.len() != 1 {
-                        return Err("Multiple teams detected for the Apple ID account.".to_string());
-                    }
-                    
-                    let team_id = &teams.get(0)
-                        .ok_or("No teams available for the Apple ID account.")?
-                        .team_id;
-
-                    let cert_identity: CertificateIdentity = if signer_settings.export_ipa {
-                        CertificateIdentity { cert: None, key: None }
-                    } else {
-                        let cert_identity = CertificateIdentity::new_with_session(
-                            &session,
-                            get_data_path(),
-                            None,
-                            team_id,
-                        ).await.map_err(|e| e.to_string())?;
-
-                        cert_identity
-                    };
-
-                    session.qh_ensure_device(
-                        team_id,
-                        &device.name,
-                        &device.uuid,
-                    )
-                    .await
-                    .map_err(|e| format!("Failed to ensure device is registered: {}", e))?;
-                                
-                    sender_clone.send(PlumeFrameMessage::InstallProgress(20, Some("Extracting package...".to_string()))).ok();
-                    
-                    let bundle = package.get_package_bundle()
-                        .map_err(|e| format!("Failed to get package bundle: {}", e))?;
-                    let bundles = bundle.collect_bundles_sorted()
-                        .map_err(|e| format!("Failed to collect bundles: {}", e))?;
-                    
-                    let bundle_identifier = bundle.get_bundle_identifier()
-                        .ok_or("Failed to get bundle identifier from package.")?;
-
-                    if let Some(new_name) = signer_settings.custom_name.as_ref() {
-                        bundle.set_name(new_name).map_err(|e| format!("Failed to set new name: {}", e))?;
-                    }
-
-                    if let Some(new_version) = signer_settings.custom_version.as_ref() {
-                        bundle.set_version(new_version).map_err(|e| format!("Failed to set new version: {}", e))?;
-                    }
-                    
-                    if signer_settings.support_minimum_os_version {
-                        bundle.set_info_plist_key("MinimumOSVersion", "7.0").map_err(|e| format!("Failed to set minimum OS version: {}", e))?;
-                    }
-                    
-                    if signer_settings.support_file_sharing {
-                        bundle.set_info_plist_key("UIFileSharingEnabled", true).map_err(|e| format!("Failed to set file sharing: {}", e))?;
-                        bundle.set_info_plist_key("UISupportsDocumentBrowser", true).map_err(|e| format!("Failed to set document opening: {}", e))?;
-                    }
-                    
-                    if signer_settings.support_ipad_fullscreen {
-                        bundle.set_info_plist_key("UIRequiresFullScreen", true).map_err(|e| format!("Failed to set iPad fullscreen: {}", e))?;
-                    }
-
-                    if signer_settings.support_game_mode {
-                        bundle.set_info_plist_key("GCSupportsGameMode", true).map_err(|e| format!("Failed to set game mode: {}", e))?;
-                    }
-
-                    if signer_settings.support_pro_motion {
-                        bundle.set_info_plist_key("CADisableMinimumFrameDurationOnPhone", true).map_err(|e| format!("Failed to set document opening: {}", e))?;
-                    }
-
-                    if !signer_settings.export_ipa {
-                        if signer_settings.custom_identifier.is_none() {
-                            signer_settings.custom_identifier = Some(format!("{bundle_identifier}.{team_id}"));
-                        }
-                    }
-
-                    if let Some(new_identifier) = signer_settings.custom_identifier.as_ref() {
-                        for embedded_bundle in &bundles {
-                            embedded_bundle.set_matching_identifier(
-                                &bundle_identifier,
-                                &new_identifier,
-                            ).map_err(|e| format!("Failed to set matching identifier: {}", e))?;
-                        }
-                    }
-                    
-                    sender_clone.send(PlumeFrameMessage::InstallProgress(30, Some(format!("Registering {}...", bundle.get_name().unwrap_or_default())))).ok();
-                    
-                    let mut provisionings: Vec<MobileProvision> = Vec::new();
-                    
-                    if !signer_settings.export_ipa {
-                        for sub_bundle in &bundles {
-                            if signer_settings.should_only_use_main_provisioning && sub_bundle.dir() != bundle.dir() {
-                                continue;
-                            }
-                            
-                            if 
-                                sub_bundle._type != BundleType::AppExtension &&
-                                sub_bundle._type != BundleType::App 
-                            {
-                                continue;
-                            }
-
-                            let bundle_executable_name = sub_bundle.get_executable()
-                                .ok_or("Failed to get executable from bundle.")?;
-                            
-                            let bundle_executable_path = sub_bundle.dir().join(&bundle_executable_name);
-                            
-                            let macho = MachO::new(&bundle_executable_path)
-                                .map_err(|e| format!("Failed to read Mach-O binary: {}", e))?;
-                            
-                            let id = sub_bundle.get_bundle_identifier()
-                                .ok_or("Failed to get bundle identifier from bundle.")?;
-                            
-                            println!("{}", id);
-
-                            session.qh_ensure_app_id(team_id, &sub_bundle.get_name().unwrap_or_default(), &id)
-                                .await
-                                .map_err(|e| format!("Failed to ensure app ID: {}", e))?;
-                            
-                            let capabilities = session.v1_list_capabilities(team_id)
-                                .await
-                                .map_err(|e| format!("Failed to list capabilities: {}", e))?;
-                            
-                            let app_id_id = session.qh_get_app_id(team_id, &id)
-                                .await
-                                .map_err(|e| e.to_string())?
-                                .ok_or("Failed to get ensured app ID.")?;
-
-                            if let Some(caps) = macho.capabilities_for_entitlements(&capabilities.data) {
-                                session.v1_update_app_id(team_id, &id, caps)
-                                    .await
-                                    .map_err(|e| format!("Failed to enable capabilities: {}", e))?;
-                            }
-                            
-                            if let Some(app_groups) = macho.app_groups_for_entitlements() {
-                                for group in &app_groups {
-                                    let group = format!("{group}.{team_id}");
-                                    let group_id = session.qh_ensure_app_group(team_id, &group, &group)
-                                        .await
-                                        .map_err(|e| format!("Failed to ensure app group: {}", e))?;
-
-                                    session.qh_assign_app_group(team_id, &app_id_id.app_id_id, &group_id.application_group)
-                                        .await
-                                        .map_err(|e| format!("Failed to add app group to app ID: {}", e))?;
-                                }
-                            }
-
-                            let profiles = session.qh_get_profile(team_id, &app_id_id.app_id_id)
-                                .await
-                                .map_err(|e| format!("Failed to list profiles: {}", e))?;
-
-                            let profile_data = profiles.provisioning_profile.encoded_profile;
-                            
-                            let mobile_provision = MobileProvision::load_from_bytes(profile_data.as_ref())
-                                .map_err(|e| format!("Failed to load mobile provision: {}", e))?;
-                            
-                            provisionings.push(mobile_provision);
-                        }
-                    }
-
-                    sender_clone.send(PlumeFrameMessage::InstallProgress(50, Some(format!("Signing {}...", bundle.get_name().unwrap_or_default())))).ok();
-                    
-                    let signer = Signer::new(
-                        Some(cert_identity),
-                        signer_settings.clone(),
-                        provisionings,
-                    );
-
-                    signer.sign_bundle(&bundle)
-                        .map_err(|e| format!("Failed to sign bundle: {}", e))?;
-                    
-                    if !signer_settings.export_ipa {
-                        let provider = usbmuxd_device.to_provider(UsbmuxdAddr::from_env_var().unwrap(), "baller");
-                        
-                        let bundle_name = bundle.get_name().unwrap_or_default();
-                        let callback = {
-                            let sender_clone = sender_clone.clone();
-                            move |(progress, _): (u64, ())| {
-                                let sender = sender_clone.clone();
-                                let bundle_name = bundle_name.clone();
-                                async move {
-                                    sender.send(PlumeFrameMessage::InstallProgress(progress as i32, Some(format!("Installing {}... {}%", bundle_name, progress)))).ok();
-                                }
-                            }
-                        };
-                        
-                        let state = ();
-                        
-                        installation::install_package_with_callback(&provider, bundle.dir(), None, callback, state)
-                            .await
-                            .map_err(|e| format!("Failed to install package: {}", e))?;
-                    } else {
-                        todo!("Export IPA functionality");
-                    }
-
-                    Ok::<_, String>(())
-                });
-
-                if let Err(e) = install_result {
-                    sender_clone.send(PlumeFrameMessage::InstallProgress(100, None)).ok();
-                    sender_clone.send(PlumeFrameMessage::Error(format!("{}", e))).ok();
-                    return;
+        fn process_package_file(sender: mpsc::UnboundedSender<PlumeFrameMessage>, file_path: PathBuf) {
+            match Package::new(file_path) {
+                Ok(package) => {
+                    sender.send(PlumeFrameMessage::PackageSelected(package)).ok();
                 }
-            });
-            }
-        });
-
-    }
-    
-    fn bind_login_dialog_next_handler(
-        &self,
-        sender: mpsc::UnboundedSender<PlumeFrameMessage>,
-        login_dialog: Rc<LoginDialog>,
-    ) {
-        let frame_for_errors = self.frame.clone();
-        login_dialog.clone().set_next_handler(move || {
-            let email = login_dialog.get_email();
-            let password = login_dialog.get_password();
-
-            if email.trim().is_empty() || password.is_empty() {
-                let dialog = MessageDialog::builder(
-                    &frame_for_errors,
-                    "Please enter both email and password.",
-                    "Missing Information",
-                )
-                .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconWarning)
-                .build();
-                dialog.show_modal();
-                return;
-            }
-
-            let creds = AccountCredentials;
-            if let Err(e) = creds.set_credentials(email.clone(), password.clone()) {
-                sender.send(PlumeFrameMessage::Error(format!("Failed to save credentials: {}", e))).ok();
-                return;
-            }
-
-            login_dialog.clear_fields();
-            login_dialog.hide();
-
-            let sender_for_login_thread = sender.clone();
-            thread::spawn(move || {
-                match run_login_flow(sender_for_login_thread.clone(), email, password) {
-                    Ok(account) => sender_for_login_thread.send(PlumeFrameMessage::AccountLogin(account)).ok(),
-                    Err(e) => sender_for_login_thread.send(PlumeFrameMessage::Error(format!("Login failed: {}", e))).ok(),
+                Err(e) => {
+                    sender.send(PlumeFrameMessage::Error(format!("Failed to open package: {}", e))).ok();
                 }
-            });
-        });
-    }
+            }
+        }
 
-    fn bind_file_handlers(&self, sender: mpsc::UnboundedSender<PlumeFrameMessage>) {
         #[cfg(not(target_os = "linux"))]
         self.default_page.set_file_handlers({
             let sender = sender.clone();
-            move |file_path| Self::process_package_file(sender.clone(), PathBuf::from(file_path))
+            move |file_path| process_package_file(sender.clone(), PathBuf::from(file_path))
         });
 
         self.add_ipa_button.on_click({
@@ -593,28 +287,335 @@ impl PlumeFrame {
                 }
 
                 if let Some(file_path) = dialog.get_path() {
-                    Self::process_package_file(sender.clone(), PathBuf::from(file_path));
+                    process_package_file(sender.clone(), PathBuf::from(file_path));
                 }
             }
         });
-    }
 
-    fn process_package_file(sender: mpsc::UnboundedSender<PlumeFrameMessage>, file_path: PathBuf) {
-        match Package::new(file_path) {
-            Ok(package) => {
-                sender.send(PlumeFrameMessage::PackageSelected(package)).ok();
+        // MARK: Install Page Handlers
+
+        self.install_page.set_cancel_handler({
+            let sender = sender.clone();
+            move || {
+                sender.send(PlumeFrameMessage::PackageDeselected).ok();
             }
-            Err(e) => {
-                sender.send(PlumeFrameMessage::Error(format!("Failed to open package: {}", e))).ok();
+        });
+        
+        self.install_page.set_install_handler({
+            let message_handler = message_handler.clone();
+            let sender = sender.clone();
+            move || {
+                let binding = message_handler.borrow();
+
+                let Some(selected_device) = binding.usbmuxd_selected_device_id.as_deref() else {
+                    sender.send(PlumeFrameMessage::Error("No device selected for installation.".to_string())).ok();
+                    return;
+                };
+                
+                let Some(selected_package) = binding.package_selected.as_ref() else {
+                    sender.send(PlumeFrameMessage::Error("No package selected for installation.".to_string())).ok();
+                    return;
+                };
+
+                let Some(selected_account) = binding.account_credentials.as_ref() else {
+                    sender.send(PlumeFrameMessage::Error("No Apple ID account available for installation.".to_string())).ok();
+                    return;
+                };
+                
+                let mut signer_settings = binding.signer_settings.clone();
+                binding.plume_frame.install_page.update_fields(&mut signer_settings);
+
+                let package = selected_package.clone();
+                let account = selected_account.clone();
+                let device_id = selected_device.to_string();
+                let sender_clone = sender.clone();
+
+                thread::spawn(move || {
+                    let rt = Builder::new_current_thread().enable_all().build().unwrap();
+
+                    let install_result = rt.block_on(async {
+                        let session = DeveloperSession::with(account.clone());
+                        
+                        sender_clone.send(PlumeFrameMessage::InstallProgress(10, Some("Ensuring current device is registered...".to_string()))).ok();
+
+                        let mut usbmuxd = UsbmuxdConnection::default()
+                            .await
+                            .map_err(|e| format!("usbmuxd connect error: {e}"))?;
+                        let usbmuxd_device = usbmuxd.get_devices()
+                            .await
+                            .map_err(|e| format!("usbmuxd device list error: {e}"))?
+                            .into_iter()
+                            .find(|d| d.device_id.to_string() == device_id)
+                            .ok_or_else(|| format!("Device ID {device_id} not found"))?;
+
+                        let device = Device::new(usbmuxd_device.clone()).await;
+                        
+                        // TODO: Handle multiple teams properly
+                        let teams = session.qh_list_teams()
+                            .await
+                            .map_err(|e| format!("Failed to list teams: {}", e))?.teams;
+                        
+                        if teams.len() != 1 {
+                            return Err("Multiple teams detected for the Apple ID account.".to_string());
+                        }
+                        
+                        let team_id = &teams.get(0)
+                            .ok_or("No teams available for the Apple ID account.")?
+                            .team_id;
+
+                        let cert_identity: CertificateIdentity = if signer_settings.export_ipa {
+                            CertificateIdentity { cert: None, key: None }
+                        } else {
+                            let cert_identity = CertificateIdentity::new_with_session(
+                                &session,
+                                get_data_path(),
+                                None,
+                                team_id,
+                            ).await.map_err(|e| e.to_string())?;
+
+                            cert_identity
+                        };
+
+                        session.qh_ensure_device(
+                            team_id,
+                            &device.name,
+                            &device.uuid,
+                        )
+                        .await
+                        .map_err(|e| format!("Failed to ensure device is registered: {}", e))?;
+                                    
+                        sender_clone.send(PlumeFrameMessage::InstallProgress(20, Some("Extracting package...".to_string()))).ok();
+                        
+                        let bundle = package.get_package_bundle()
+                            .map_err(|e| format!("Failed to get package bundle: {}", e))?;
+                        let bundles = bundle.collect_bundles_sorted()
+                            .map_err(|e| format!("Failed to collect bundles: {}", e))?;
+                        
+                        let bundle_identifier = bundle.get_bundle_identifier()
+                            .ok_or("Failed to get bundle identifier from package.")?;
+
+                        if let Some(new_name) = signer_settings.custom_name.as_ref() {
+                            bundle.set_name(new_name).map_err(|e| format!("Failed to set new name: {}", e))?;
+                        }
+
+                        if let Some(new_version) = signer_settings.custom_version.as_ref() {
+                            bundle.set_version(new_version).map_err(|e| format!("Failed to set new version: {}", e))?;
+                        }
+                        
+                        if signer_settings.support_minimum_os_version {
+                            bundle.set_info_plist_key("MinimumOSVersion", "7.0").map_err(|e| format!("Failed to set minimum OS version: {}", e))?;
+                        }
+                        
+                        if signer_settings.support_file_sharing {
+                            bundle.set_info_plist_key("UIFileSharingEnabled", true).map_err(|e| format!("Failed to set file sharing: {}", e))?;
+                            bundle.set_info_plist_key("UISupportsDocumentBrowser", true).map_err(|e| format!("Failed to set document opening: {}", e))?;
+                        }
+                        
+                        if signer_settings.support_ipad_fullscreen {
+                            bundle.set_info_plist_key("UIRequiresFullScreen", true).map_err(|e| format!("Failed to set iPad fullscreen: {}", e))?;
+                        }
+
+                        if signer_settings.support_game_mode {
+                            bundle.set_info_plist_key("GCSupportsGameMode", true).map_err(|e| format!("Failed to set game mode: {}", e))?;
+                        }
+
+                        if signer_settings.support_pro_motion {
+                            bundle.set_info_plist_key("CADisableMinimumFrameDurationOnPhone", true).map_err(|e| format!("Failed to set document opening: {}", e))?;
+                        }
+
+                        if !signer_settings.export_ipa {
+                            if signer_settings.custom_identifier.is_none() {
+                                signer_settings.custom_identifier = Some(format!("{bundle_identifier}.{team_id}"));
+                            }
+                        }
+
+                        if let Some(new_identifier) = signer_settings.custom_identifier.as_ref() {
+                            for embedded_bundle in &bundles {
+                                embedded_bundle.set_matching_identifier(
+                                    &bundle_identifier,
+                                    &new_identifier,
+                                ).map_err(|e| format!("Failed to set matching identifier: {}", e))?;
+                            }
+                        }
+                        
+                        sender_clone.send(PlumeFrameMessage::InstallProgress(30, Some(format!("Registering {}...", bundle.get_name().unwrap_or_default())))).ok();
+                        
+                        let mut provisionings: Vec<MobileProvision> = Vec::new();
+                        
+                        if !signer_settings.export_ipa {
+                            for sub_bundle in &bundles {
+                                if signer_settings.should_only_use_main_provisioning && sub_bundle.dir() != bundle.dir() {
+                                    continue;
+                                }
+                                
+                                if 
+                                    sub_bundle._type != BundleType::AppExtension &&
+                                    sub_bundle._type != BundleType::App 
+                                {
+                                    continue;
+                                }
+
+                                let bundle_executable_name = sub_bundle.get_executable()
+                                    .ok_or("Failed to get executable from bundle.")?;
+                                
+                                let bundle_executable_path = sub_bundle.dir().join(&bundle_executable_name);
+                                
+                                let macho = MachO::new(&bundle_executable_path)
+                                    .map_err(|e| format!("Failed to read Mach-O binary: {}", e))?;
+                                
+                                let id = sub_bundle.get_bundle_identifier()
+                                    .ok_or("Failed to get bundle identifier from bundle.")?;
+                                
+                                println!("{}", id);
+
+                                session.qh_ensure_app_id(team_id, &sub_bundle.get_name().unwrap_or_default(), &id)
+                                    .await
+                                    .map_err(|e| format!("Failed to ensure app ID: {}", e))?;
+                                
+                                let capabilities = session.v1_list_capabilities(team_id)
+                                    .await
+                                    .map_err(|e| format!("Failed to list capabilities: {}", e))?;
+                                
+                                let app_id_id = session.qh_get_app_id(team_id, &id)
+                                    .await
+                                    .map_err(|e| e.to_string())?
+                                    .ok_or("Failed to get ensured app ID.")?;
+
+                                if let Some(caps) = macho.capabilities_for_entitlements(&capabilities.data) {
+                                    session.v1_update_app_id(team_id, &id, caps)
+                                        .await
+                                        .map_err(|e| format!("Failed to enable capabilities: {}", e))?;
+                                }
+                                
+                                if let Some(app_groups) = macho.app_groups_for_entitlements() {
+                                    for group in &app_groups {
+                                        let group = format!("{group}.{team_id}");
+                                        let group_id = session.qh_ensure_app_group(team_id, &group, &group)
+                                            .await
+                                            .map_err(|e| format!("Failed to ensure app group: {}", e))?;
+
+                                        session.qh_assign_app_group(team_id, &app_id_id.app_id_id, &group_id.application_group)
+                                            .await
+                                            .map_err(|e| format!("Failed to add app group to app ID: {}", e))?;
+                                    }
+                                }
+
+                                let profiles = session.qh_get_profile(team_id, &app_id_id.app_id_id)
+                                    .await
+                                    .map_err(|e| format!("Failed to list profiles: {}", e))?;
+
+                                let profile_data = profiles.provisioning_profile.encoded_profile;
+                                
+                                let mobile_provision = MobileProvision::load_from_bytes(profile_data.as_ref())
+                                    .map_err(|e| format!("Failed to load mobile provision: {}", e))?;
+                                
+                                provisionings.push(mobile_provision);
+                            }
+                        }
+
+                        sender_clone.send(PlumeFrameMessage::InstallProgress(50, Some(format!("Signing {}...", bundle.get_name().unwrap_or_default())))).ok();
+                        
+                        let signer = Signer::new(
+                            Some(cert_identity),
+                            signer_settings.clone(),
+                            provisionings,
+                        );
+
+                        signer.sign_bundle(&bundle)
+                            .map_err(|e| format!("Failed to sign bundle: {}", e))?;
+                        
+                        if !signer_settings.export_ipa {
+                            let provider = usbmuxd_device.to_provider(UsbmuxdAddr::from_env_var().unwrap(), "baller");
+                            
+                            let bundle_name = bundle.get_name().unwrap_or_default();
+                            let callback = {
+                                let sender_clone = sender_clone.clone();
+                                move |(progress, _): (u64, ())| {
+                                    let sender = sender_clone.clone();
+                                    let bundle_name = bundle_name.clone();
+                                    async move {
+                                        sender.send(PlumeFrameMessage::InstallProgress(progress as i32, Some(format!("Installing {}... {}%", bundle_name, progress)))).ok();
+                                    }
+                                }
+                            };
+                            
+                            let state = ();
+                            
+                            installation::install_package_with_callback(&provider, bundle.dir(), None, callback, state)
+                                .await
+                                .map_err(|e| format!("Failed to install package: {}", e))?;
+                        } else {
+                            todo!("Export IPA functionality");
+                        }
+
+                        Ok::<_, String>(())
+                    });
+
+                    if let Err(e) = install_result {
+                        sender_clone.send(PlumeFrameMessage::InstallProgress(100, None)).ok();
+                        sender_clone.send(PlumeFrameMessage::Error(format!("{}", e))).ok();
+                        return;
+                    }
+                });
             }
-        }
+        });
+
+        
+        // MARK: Login Dialog "Next" Button
+
+        self.login_dialog.set_next_handler({
+            let frame = self.frame.clone();
+            let login_dialog = self.login_dialog.clone();
+            move || {
+                let email = login_dialog.get_email();
+                let password = login_dialog.get_password();
+
+                if email.trim().is_empty() || password.is_empty() {
+                    let dialog = MessageDialog::builder(
+                        &frame,
+                        "Please enter both email and password.",
+                        "Missing Information",
+                    )
+                    .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconWarning)
+                    .build();
+                    dialog.show_modal();
+                    return;
+                }
+
+                login_dialog.clear_fields();
+
+                thread::spawn({
+                    let email = email.clone();
+                    let password = password.clone();
+                    let sender = sender.clone();
+                    move || {
+                        match run_login_flow(sender.clone(), &email, &password) {
+                            Ok(account) => {
+                                sender.send(PlumeFrameMessage::AccountLogin(account)).ok();
+
+                                if let Err(e) = AccountCredentials.set_credentials(email, password) {
+                                    sender.send(PlumeFrameMessage::Error(format!("Failed to save credentials: {}", e))).ok();
+                                    return;
+                                }
+                            },
+                            Err(e) => {
+                                sender.send(PlumeFrameMessage::Error(format!("Login failed: {}", e))).ok();
+                            },
+                        }
+                    }
+                });
+            }
+        });
+
     }
 }
 
+// MARK: - Login flow
+
 pub fn run_login_flow(
     sender: mpsc::UnboundedSender<PlumeFrameMessage>,
-    email: String,
-    password: String,
+    email: &String,
+    password: &String,
 ) -> Result<Account, String> {
     let anisette_config = AnisetteConfiguration::default()
         .set_configuration_path(get_data_path());

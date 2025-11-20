@@ -149,6 +149,9 @@ impl PlumeFrameMessageHandler {
                 .build();
                 dialog.show_modal();
                 self.account_credentials = Some(account);
+                
+                self.plume_frame.login_dialog.dialog.hide();
+                self.plume_frame.settings_dialog.set_account_name(Some((first, last)));
             }
             PlumeFrameMessage::AccountDeleted => {
                 if self.account_credentials.is_none() {
@@ -162,6 +165,7 @@ impl PlumeFrameMessageHandler {
                 }
                 
                 self.account_credentials = None;
+                self.plume_frame.settings_dialog.set_account_name(None);
             }
             PlumeFrameMessage::AwaitingTwoFactorCode(tx) => {
                 let result = self.plume_frame.create_single_field_dialog(

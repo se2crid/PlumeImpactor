@@ -76,14 +76,6 @@ impl LoginDialog {
         self.password_field.set_value("");
     }
 
-    pub fn show_modal(&self) {
-        self.dialog.show_modal();
-    }
-
-    pub fn hide(&self) {
-        self.dialog.end_modal(0);
-    }
-
     pub fn set_next_handler(&self, on_next: impl Fn() + 'static) {
         self.next_button.on_click(move |_evt| {
             on_next();
@@ -94,63 +86,69 @@ impl LoginDialog {
 // MARK: - AccountDialog
 
 #[derive(Clone)]
-pub struct AccountDialog {
+pub struct SettingsDialog {
     pub dialog: Dialog,
     pub logout_button: Button,
-    pub label: StaticText,
+    pub account_label: StaticText,
 }
 
-pub fn create_account_dialog(parent: &Window) -> AccountDialog {
-    let dialog = Dialog::builder(parent, "Account")
-        .with_style(DialogStyle::SystemMenu | DialogStyle::Caption)
+pub fn create_settings_dialog(parent: &Window) -> SettingsDialog {
+    let dialog = Dialog::builder(parent, "Settings")
         .with_size(DIALOG_SIZE.0, DIALOG_SIZE.1)
         .build();
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
     sizer.add_spacer(13);
 
-    let label = StaticText::builder(&dialog).with_label("").build();
-    sizer.add(&label, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right, 13);
+    let account_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let account_label = StaticText::builder(&dialog).with_label("Not logged in").build();
+    let logout_button = Button::builder(&dialog).with_label("Login").build();
+    account_row.add(&account_label, 4, SizerFlag::Expand, 0);
+    account_row.add_stretch_spacer(1);
+    account_row.add(&logout_button, 1, SizerFlag::Expand, 0);
 
-    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
-    
-    let close_button = Button::builder(&dialog).with_label("Close").build();
-    buttons.add(&close_button, 0, SizerFlag::All, 8);
-    let logout_button = Button::builder(&dialog).with_label("Log out").build();
-    
-    buttons.add(&logout_button, 0, SizerFlag::All, 8);
-    
-    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+    sizer.add_sizer(&account_row, 0, SizerFlag::Right | SizerFlag::Left, 13);
+
+    sizer.add(&StaticLine::builder(&dialog).build(), 0, SizerFlag::Expand | SizerFlag::All, 13);
+
+    let cert_button_sizer = BoxSizer::builder(Orientation::Horizontal).build();
+    let import_cert_button = Button::builder(&dialog).with_label("Import P12").build();
+    import_cert_button.enable(false);
+    let export_cert_button = Button::builder(&dialog).with_label("Export P12").build();
+    export_cert_button.enable(false);
+    cert_button_sizer.add(&import_cert_button, 1, SizerFlag::Expand, 0);
+    cert_button_sizer.add_spacer(13);
+    cert_button_sizer.add(&export_cert_button, 1, SizerFlag::Expand, 0);
+
+    sizer.add_sizer(&cert_button_sizer, 0, SizerFlag::Right | SizerFlag::Left, 13);
 
     dialog.set_sizer(sizer, true);
-    
-    close_button.on_click({
-        let dialog = dialog.clone();
-        move |_| dialog.end_modal(ID_OK as i32)
-    });
 
-    AccountDialog {
+    SettingsDialog {
         dialog,
         logout_button,
-        label,
+        account_label,
     }
 }
 
-impl AccountDialog {
-    pub fn show_modal(&self) {
-        self.dialog.show_modal();
-    }
-
+impl SettingsDialog {
     pub fn set_logout_handler(&self, on_logout: impl Fn() + 'static) {
-        let dialog = self.dialog.clone();
         self.logout_button.on_click(move |_| {
             on_logout();
-            dialog.end_modal(ID_OK as i32);
         });
     }
-    
-    pub fn set_account_name(&self, account_name: (String, String)) {
-        self.label.set_label(&format!("Logged in as {} {}", account_name.0, account_name.1));
+
+    pub fn set_account_name(&self, account_name: Option<(String, String)>) {
+        match account_name {
+            Some((first, last)) => {
+                self.account_label.set_label(&format!("Logged in as {} {}", first, last));
+                self.logout_button.set_label("Logout");
+            }
+            None => {
+                self.account_label.set_label("Not logged in");
+                self.logout_button.set_label("Sign In");
+            }
+        }
     }
 }
 
