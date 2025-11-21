@@ -77,6 +77,7 @@ jobs:
           cargo fetch --locked || true
           cargo patch-crate --force
           mkdir -p build/out
+          mkdir -p build/nsis
 
       - name: Build & Bundle (Windows)
         run: |
@@ -85,7 +86,6 @@ jobs:
 
       - name: Create NSIS Installer
         run: |
-          mkdir -p build/nsis
           mv package/windows/* build/nsis/
           choco install nsis.portable
           makensis build/nsis/installer.nsi
