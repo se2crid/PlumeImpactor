@@ -25,8 +25,7 @@ use crate::{
     handlers::{PlumeFrameMessage, PlumeFrameMessageHandler},
     keychain::AccountCredentials,
     pages::{
-        LoginDialog, DefaultPage, InstallPage, SettingsDialog, WINDOW_SIZE,
-        create_default_page, create_install_page, create_login_dialog, create_settings_dialog,
+        DefaultPage, InstallPage, LoginDialog, SettingsDialog, WINDOW_SIZE, WorkPage, create_default_page, create_install_page, create_login_dialog, create_settings_dialog, create_work_page
     },
 };
 
@@ -41,6 +40,7 @@ pub struct PlumeFrame {
     pub frame: Frame,
     pub default_page: DefaultPage,
     pub install_page: InstallPage,
+    pub work_page: WorkPage,
     pub usbmuxd_picker: Choice,
 
     pub add_ipa_button: Button,
@@ -85,6 +85,7 @@ impl PlumeFrame {
 
         let default_page = create_default_page(&frame);
         let install_page = create_install_page(&frame);
+        let work_page = create_work_page(&frame);
         sizer.add_sizer(&top_row, 0, SizerFlag::Expand | SizerFlag::All, 13);
         sizer.add(
             &default_page.panel,
@@ -98,13 +99,21 @@ impl PlumeFrame {
             SizerFlag::Expand | SizerFlag::All,
             0,
         );
+        sizer.add(
+            &work_page.panel,
+            1,
+            SizerFlag::Expand | SizerFlag::All,
+            0,
+        );
         frame.set_sizer(sizer, true);
         install_page.panel.hide();
+        work_page.panel.hide();
 
         let mut s = Self {
             frame: frame.clone(),
             default_page,
             install_page,
+            work_page,
             usbmuxd_picker: device_picker,
             add_ipa_button,
             apple_id_button,
@@ -359,9 +368,11 @@ impl PlumeFrame {
                     let rt = Builder::new_current_thread().enable_all().build().unwrap();
 
                     let install_result = rt.block_on(async {
+                        sender_clone.send(PlumeFrameMessage::WorkStarted).ok();
+
                         let session = DeveloperSession::with(account.clone());
 
-                        sender_clone.send(PlumeFrameMessage::InstallProgress(10, Some("Ensuring current device is registered...".to_string()))).ok();
+                        sender_clone.send(PlumeFrameMessage::WorkUpdated("Ensuring current device is registered...".to_string())).ok();
 
                         let mut usbmuxd = UsbmuxdConnection::default()
                             .await
@@ -420,7 +431,7 @@ impl PlumeFrame {
                         .await
                         .map_err(|e| format!("Failed to ensure device is registered: {}", e))?;
                                     
-                        sender_clone.send(PlumeFrameMessage::InstallProgress(20, Some("Extracting package...".to_string()))).ok();
+                        sender_clone.send(PlumeFrameMessage::WorkUpdated("Extracting package...".to_string())).ok();
                         
                         let bundle = package.get_package_bundle()
                             .map_err(|e| format!("Failed to get package bundle: {}", e))?;
@@ -429,13 +440,13 @@ impl PlumeFrame {
                             .await
                             .map_err(|e| format!("Failed to modify bundle: {}", e))?;
 
-                        sender_clone.send(PlumeFrameMessage::InstallProgress(30, Some(format!("Registering {}...", bundle.get_name().unwrap_or_default())))).ok();
+                        sender_clone.send(PlumeFrameMessage::WorkUpdated(format!("Registering {}...", bundle.get_name().unwrap_or_default()))).ok();
 
                         signer.register_bundle(&bundle, &session, &team_id)
                             .await
                             .map_err(|e| format!("Failed to register bundle: {}", e))?;
 
-                        sender_clone.send(PlumeFrameMessage::InstallProgress(50, Some(format!("Signing {}...", bundle.get_name().unwrap_or_default())))).ok();
+                        sender_clone.send(PlumeFrameMessage::WorkUpdated(format!("Signing {}...", bundle.get_name().unwrap_or_default()))).ok();
 
                         signer.sign_bundle(&bundle).await
                             .map_err(|e| format!("Failed to sign bundle: {}", e))?;
@@ -445,7 +456,7 @@ impl PlumeFrame {
                             move |progress: i32| {
                                 let sender = sender.clone();
                                 async move {
-                                    sender.send(PlumeFrameMessage::InstallProgress(progress, None)).ok();
+                                    sender.send(PlumeFrameMessage::WorkUpdated(format!("Installing... {}%", progress))).ok();
                                 }
                             }
                         };
@@ -458,22 +469,36 @@ impl PlumeFrame {
                                 signer.options.custom_identifier.as_ref(),
                                 signer_settings.app.pairing_file_path(),
                             ) {
-                                sender_clone.send(PlumeFrameMessage::InstallProgress(90, Some("Installing pairing record...".to_string()))).ok();
+                                sender_clone.send(PlumeFrameMessage::WorkUpdated("Installing pairing record...".to_string())).ok();
                                 device.install_pairing_record(custom_identifier, &pairing_file_bundle_path)
                                     .await
                                     .map_err(|e| format!("Failed to install pairing record: {}", e))?;
                             }
                         }
 
+                        sender_clone.send(PlumeFrameMessage::WorkEnded).ok();
+                        
                         Ok::<_, String>(())
                     });
 
                     if let Err(e) = install_result {
-                        sender_clone.send(PlumeFrameMessage::InstallProgress(100, None)).ok();
+                        sender_clone.send(PlumeFrameMessage::WorkEnded).ok();
                         sender_clone.send(PlumeFrameMessage::Error(format!("{}", e))).ok();
                         return;
                     }
                 });
+            }
+        });
+
+        // MARK: Work Page Handlers
+
+        self.work_page.set_back_handler({
+            let work_page = self.work_page.clone();
+            let install_page = self.install_page.clone();
+            move || {
+                work_page.panel.hide();
+                work_page.set_status_text("Idle");
+                install_page.panel.show(true);
             }
         });
         

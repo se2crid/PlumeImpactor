@@ -1,12 +1,16 @@
-pub mod default;
+mod default;
 pub use default::{DefaultPage, create_default_page};
 
-pub mod install;
-pub use install::{InstallPage, create_install_page};
-
-pub mod settings;
+mod settings;
 pub use settings::{LoginDialog, create_login_dialog};
 pub use settings::{SettingsDialog, create_settings_dialog};
+
+mod install;
+pub use install::{InstallPage, create_install_page};
+
+mod work;
+pub use work::{WorkPage, create_work_page};
+
 
 // TODO: investigate why github actions messes up weird sizing shit
 #[cfg(target_os = "linux")]

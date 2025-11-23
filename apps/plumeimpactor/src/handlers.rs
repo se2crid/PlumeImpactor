@@ -8,7 +8,6 @@ use grand_slam::auth::Account;
 use utils::{
     SignerOptions, 
     Package, 
-    PlistInfoTrait,
     Device
 };
 use crate::frame::PlumeFrame;
@@ -24,14 +23,15 @@ pub enum PlumeFrameMessage {
     AccountDeleted,
     AwaitingTwoFactorCode(std_mpsc::Sender<Result<String, String>>),
     RequestTeamSelection(Vec<String>, std_mpsc::Sender<Result<i32, String>>),
-    InstallProgress(i32, Option<String>),
+    WorkStarted,
+    WorkUpdated(String),
+    WorkEnded,
     Error(String),
 }
 
 pub struct PlumeFrameMessageHandler {
     pub receiver: mpsc::UnboundedReceiver<PlumeFrameMessage>,
     pub plume_frame: PlumeFrame,
-    pub installation_progress_dialog: Option<ProgressDialog>,
     // --- device ---
     pub usbmuxd_device_list: Vec<Device>,
     pub usbmuxd_selected_device_id: Option<String>,
@@ -56,7 +56,6 @@ impl PlumeFrameMessageHandler {
             usbmuxd_selected_device_id: None,
             package_selected: None,
             account_credentials: None,
-            installation_progress_dialog: None,
             signer_settings,
         }
     }
@@ -197,36 +196,18 @@ impl PlumeFrameMessageHandler {
                     self.handle_message(PlumeFrameMessage::Error(format!("Failed to send team selection response: {}", e)));
                 }
             }
-            PlumeFrameMessage::InstallProgress(progress, message_opt) => {
-                println!("Progress: {} - {:?}", progress, message_opt);
-                let Some(selected_package) = &self.package_selected else {
-                    return;
-                };
-                
-                if self.installation_progress_dialog.is_none() {
-                    let progress_dialog = ProgressDialog::builder(
-                        &self.plume_frame.frame,
-                        &format!("Installing {}", selected_package.get_name().unwrap_or("Unknown".to_string())),
-                        "Waiting...",
-                        100
-                    )
-                    .show_elapsed_time()
-                    .show_estimated_time()
-                    .show_remaining_time()
-                    .can_abort()
-                    .smooth()
-                    .build();
-                
-                    self.installation_progress_dialog = Some(progress_dialog);
-                }
-
-                if let Some(dialog) = &mut self.installation_progress_dialog {
-                    dialog.update(progress, message_opt.as_deref());
-
-                    if progress >= 90 {
-                        self.installation_progress_dialog = None;
-                    }
-                }
+            PlumeFrameMessage::WorkStarted => {
+                self.plume_frame.install_page.panel.hide();
+                self.plume_frame.work_page.enable_back_button(false);
+                self.plume_frame.work_page.panel.show(true);
+                self.plume_frame.frame.layout();
+            }
+            PlumeFrameMessage::WorkUpdated(status_text) => {
+                self.plume_frame.work_page.set_status_text(&status_text);
+            }
+            PlumeFrameMessage::WorkEnded => {
+                self.plume_frame.work_page.set_status_text("All Done!!");
+                self.plume_frame.work_page.enable_back_button(true);
             }
             PlumeFrameMessage::Error(error_msg) => {
                 let dialog = MessageDialog::builder(&self.plume_frame.frame, &error_msg, "Error")
