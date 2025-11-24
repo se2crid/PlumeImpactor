@@ -3,6 +3,7 @@ use plist::{Dictionary, Value};
 
 use crate::Error;
 
+use crate::utils::strip_invalid_name_chars;
 use crate::{SessionRequestTrait, developer_endpoint};
 use super::{DeveloperSession, ResponseMeta};
 
@@ -24,7 +25,7 @@ impl DeveloperSession {
         
         let mut body = Dictionary::new();
         body.insert("teamId".to_string(), Value::String(team_id.to_string()));
-        body.insert("name".to_string(), Value::String(name.to_string()));
+        body.insert("name".to_string(), Value::String(strip_invalid_name_chars(name)));
         body.insert("identifier".to_string(), Value::String(identifier.to_string()));
         
         let response = self.qh_send_request(&endpoint, Some(body)).await?;

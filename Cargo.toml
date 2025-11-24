@@ -52,3 +52,4 @@ futures = "0.3.31"
 
 [patch.crates-io]
 srp = { path="./target/patch/srp-0.6.0" }
+apple-codesign = { path="./target/patch/apple-codesign-0.29.0" }

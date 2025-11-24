@@ -219,14 +219,11 @@ impl Signer {
     pub async fn sign_bundle(&self, bundle: &Bundle) -> Result<(), Error> {
         let bundles = bundle.collect_bundles_sorted()?;
 
-        let team_id = bundle.get_team_identifier();
-
         for bundle in &bundles {
             Self::sign_single_bundle(
                 bundle, 
                 self.certificate.as_ref(), 
                 &self.provisioning_files, 
-                &team_id,
             )?;
         }
 
@@ -243,7 +240,6 @@ impl Signer {
         bundle: &Bundle,
         certificate: Option<&CertificateIdentity>,
         provisioning_files: &[MobileProvision],
-        team_id: &Option<String>,
     ) -> Result<(), Error> {
 
         let mut settings = Self::build_base_settings(certificate)?;
@@ -280,7 +276,7 @@ impl Signer {
 
                 if let Some(bundle_executable) = bundle.get_executable() {
                     let binary_path = bundle.bundle_dir().join(bundle_executable);
-                    prov.merge_entitlements(binary_path, team_id).ok();
+                    prov.merge_entitlements(binary_path).ok();
                 }
 
                 std::fs::write(

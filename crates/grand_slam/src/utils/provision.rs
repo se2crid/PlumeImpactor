@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use plist::{Dictionary, Value};
 use crate::Error;
+use plist::{Dictionary, Value};
 
 use super::MachO;
 
@@ -16,7 +16,7 @@ pub struct MobileProvision {
 impl MobileProvision {
     pub fn load_with_path<P: AsRef<Path>>(provision_path: P) -> Result<Self, Error> {
         let path = provision_path.as_ref();
-        
+
         if !path.exists() {
             return Err(Error::ProvisioningEntitlementsUnknown);
         }
@@ -24,14 +24,14 @@ impl MobileProvision {
         let provision_data = fs::read(path)?;
         let provisioning_plist = Self::extract_plist_from_file(&provision_data)?;
         let entitlements = Self::extract_entitlements(&provisioning_plist)?;
-        
+
         Ok(Self {
             provision_data,
             provisioning_plist,
             entitlements,
         })
     }
-    
+
     pub fn load_with_bytes(provision_data: Vec<u8>) -> Result<Self, Error> {
         let provisioning_plist = Self::extract_plist_from_file(&provision_data)?;
         let entitlements = Self::extract_entitlements(&provisioning_plist)?;
@@ -46,7 +46,7 @@ impl MobileProvision {
     pub fn entitlements(&self) -> &Dictionary {
         &self.entitlements
     }
-    
+
     pub fn replace_wildcard_in_entitlements(&mut self, new_application_id: &str) {
         for value in self.entitlements.values_mut() {
             match value {
@@ -68,37 +68,42 @@ impl MobileProvision {
             }
         }
     }
-    
-    pub fn merge_entitlements(&mut self, binary_path: PathBuf, team_id: &Option<String>) -> Result<(), Error> {
+
+    pub fn merge_entitlements(&mut self, binary_path: PathBuf) -> Result<(), Error> {
         let macho = MachO::new(&binary_path)?;
-        let binary_entitlements = macho.entitlements.ok_or(Error::ProvisioningEntitlementsUnknown)?;
-        
-        if let Some(Value::Array(other_groups)) = binary_entitlements.get("keychain-access-groups") {
-            self.entitlements.insert("keychain-access-groups".to_string(), Value::Array(other_groups.clone()));
+        let binary_entitlements = macho
+            .entitlements
+            .ok_or(Error::ProvisioningEntitlementsUnknown)?;
+
+        if let Some(Value::Array(other_groups)) = binary_entitlements.get("keychain-access-groups")
+        {
+            self.entitlements.insert(
+                "keychain-access-groups".to_string(),
+                Value::Array(other_groups.clone()),
+            );
         }
 
-        let new_team_id = self.entitlements
+        let new_team_id = self
+            .entitlements
             .get("com.apple.developer.team-identifier")
             .and_then(Value::as_string)
             .map(|s| s.to_owned());
-        let old_team_id = binary_entitlements
-            .get("com.apple.developer.team-identifier")
-            .and_then(Value::as_string)
-            .map(|s| s.to_owned())
-            .or(team_id.clone());
 
-        if let (Some(new_id), Some(old_id)) = (new_team_id.as_ref(), old_team_id.as_ref()) {
-            if let Some(Value::Array(groups)) = self.entitlements.get_mut("keychain-access-groups") {
+        if let Some(new_id) = new_team_id.as_ref() {
+            if let Some(Value::Array(groups)) = 
+                self.entitlements.get_mut("keychain-access-groups")
+            {
                 for group in groups.iter_mut() {
                     if let Value::String(s) = group {
-                        if s.contains(old_id) {
-                            *s = s.replace(old_id, new_id);
+                        let re = regex::Regex::new(r"^[A-Z0-9]{10}\.").unwrap();
+                        if re.is_match(s) {
+                            *s = format!("{}.{}", new_id, &s[11..]);
                         }
                     }
                 }
             }
         }
-                
+
         Ok(())
     }
 
@@ -109,9 +114,13 @@ impl MobileProvision {
     }
 
     pub fn bundle_id(&self) -> Option<String> {
-        let app_id = self.entitlements.get("application-identifier")?.as_string()?;
+        let app_id = self
+            .entitlements
+            .get("application-identifier")?
+            .as_string()?;
 
-        let prefix = self.provisioning_plist
+        let prefix = self
+            .provisioning_plist
             .as_dictionary()?
             .get("ApplicationIdentifierPrefix")?
             .as_array()?
@@ -119,7 +128,8 @@ impl MobileProvision {
             .as_string();
 
         if let Some(prefix) = prefix {
-            app_id.strip_prefix(prefix)
+            app_id
+                .strip_prefix(prefix)
                 .map(|rest| rest.trim_start_matches('.').to_string())
                 .or_else(|| Some(app_id.to_string()))
         } else {
@@ -128,8 +138,15 @@ impl MobileProvision {
     }
 
     fn extract_plist_from_file(data: &[u8]) -> Result<Value, Error> {
-        let start = data.windows(6).position(|w| w == b"<plist").ok_or(Error::ProvisioningEntitlementsUnknown)?;
-        let end = data.windows(8).rposition(|w| w == b"</plist>").ok_or(Error::ProvisioningEntitlementsUnknown)? + 8;
+        let start = data
+            .windows(6)
+            .position(|w| w == b"<plist")
+            .ok_or(Error::ProvisioningEntitlementsUnknown)?;
+        let end = data
+            .windows(8)
+            .rposition(|w| w == b"</plist>")
+            .ok_or(Error::ProvisioningEntitlementsUnknown)?
+            + 8;
         let plist_data = &data[start..end];
         let plist = plist::Value::from_reader_xml(plist_data)?;
         Ok(plist)
