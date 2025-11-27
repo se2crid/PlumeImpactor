@@ -491,14 +491,17 @@ impl PlumeFrame {
                                 .map_err(|e| format!("Failed to install app: {}", e))?;
 
                             if signer_settings.app.supports_pairing_file() {
-                                if let (Some(custom_identifier), Some(pairing_file_bundle_path)) = (
-                                    signer.options.custom_identifier.as_ref(),
-                                    signer_settings.app.pairing_file_path(),
-                                ) {
-                                    sender_clone.send(PlumeFrameMessage::WorkUpdated("Installing pairing record...".to_string())).ok();
-                                    device.install_pairing_record(custom_identifier, &pairing_file_bundle_path)
-                                        .await
-                                        .map_err(|e| format!("Failed to install pairing record: {}", e))?;
+                                if let Some(usbmuxd_device) = &device.usbmuxd_device {
+                                    if usbmuxd_device.connection_type == idevice::usbmuxd::Connection::Usb {
+                                        if let (Some(custom_identifier), Some(pairing_file_bundle_path)) = (
+                                        signer.options.custom_identifier.as_ref(),
+                                        signer_settings.app.pairing_file_path(),
+                                    ) {
+                                            device.install_pairing_record(custom_identifier, &pairing_file_bundle_path)
+                                                .await
+                                                .map_err(|e| format!("Failed to install pairing record: {}", e))?;
+                                        }
+                                    }
                                 }
                             }
                         }
