@@ -155,7 +155,8 @@ impl PlumeFrame {
         let handler_for_idle = message_handler.clone();
         self.frame.on_idle(move |event_data| {
             if let WindowEventData::Idle(event) = event_data {
-                event.request_more(handler_for_idle.borrow_mut().process_messages());
+                let has_more = handler_for_idle.borrow_mut().process_messages();
+                event.request_more(has_more);
             }
         });
 
@@ -551,6 +552,7 @@ impl PlumeFrame {
                 }
 
                 login_dialog.clear_fields();
+                login_dialog.dialog.hide();
 
                 thread::spawn({
                     let email = email.clone();
